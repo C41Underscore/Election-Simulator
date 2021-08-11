@@ -1,5 +1,17 @@
+from genericpath import isfile
+import hashlib
 import json
 import requests
+from os import mkdir
+from os.path import isdir, isfile
+from hashlib import sha256
+
+
+election_codes = {
+    "2010": 382037,
+    "2015": 382386,
+    "2017": 730039
+}
 
 
 def fetch_data_for_election(election_id):
@@ -23,7 +35,55 @@ def fetch_data_for_election(election_id):
             }
             con_candidate_list.append(candidate)
         curated_json[current_con]["candidates"] = con_candidate_list
-    return json.dumps(curated_json)
+    return curated_json
+
+
+def extract_votes(candidate):
+    try:
+        return int(candidate["votes"])
+    except KeyError:
+        return 0
+
+
+def generate_election_hash(election):
+    sha256_hash = hashlib.sha256()
+    if isfile("election_hashes/" + election + ".hash") == False:
+        with open("elections/" + election + ".json", "rb") as file:
+            for byte_block in iter(lambda: file.read(2056), b""):
+                    sha256_hash.update(byte_block)
+            with open("election_hashes/" + election + ".hash", "w") as hash_file:
+                hash_file.write(sha256_hash.hexdigest())
+    return sha256_hash.hexdigest()
+
+
+def validate_election_file(election):
+    if isfile("elections/" + election + ".json") == False:
+        return False
+    sha256_hash = generate_election_hash(election)
+    with open("election_hashes/" + election + ".hash", "r") as hash_file:
+        hash = hash_file.read()
+        if sha256_hash.hexdigest() != hash:
+            return False
+        else:
+            return True
+
+
+def init():
+    print("Running init function...")
+    if not isdir("elections"):
+        mkdir("elections")
+    if not isdir("election_hashes"):
+        mkdir("election_hashes")
+    for election, code in election_codes.items():
+        if validate_election_file(election) == False:
+            election_json = fetch_data_for_election(code)
+            for constituency in election_json.values():
+                constituency["candidates"].sort(key=extract_votes, reverse=True)
+            with open("elections/" + election + ".json", "w") as file:
+                file.write(json.dumps(election_json))
+                print("Computed " + election + " election")
+        else:
+            print(election + ".json is valid")
 
 
 if __name__ == "__main__":
