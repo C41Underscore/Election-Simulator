@@ -6,7 +6,6 @@ from os import mkdir
 from os.path import isdir, isfile
 from hashlib import sha256
 
-
 election_codes = {
     "2010": 382037,
     "2015": 382386,
@@ -34,6 +33,7 @@ def fetch_data_for_election(election_id):
                 "party": j["party"]["_value"]
             }
             con_candidate_list.append(candidate)
+        con_candidate_list.sort(key=extract_votes, reverse=True)
         curated_json[current_con]["candidates"] = con_candidate_list
     return curated_json
 
@@ -47,38 +47,38 @@ def extract_votes(candidate):
 
 def generate_election_hash(election):
     sha256_hash = hashlib.sha256()
-    if isfile("election_hashes/" + election + ".hash") == False:
-        with open("elections/" + election + ".json", "rb") as file:
-            for byte_block in iter(lambda: file.read(2056), b""):
-                    sha256_hash.update(byte_block)
-            with open("election_hashes/" + election + ".hash", "w") as hash_file:
-                hash_file.write(sha256_hash.hexdigest())
+    with open("elections/" + election + ".json", "rb") as file:
+        for byte_block in iter(lambda: file.read(2056), b""):
+            sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
 
 def validate_election_file(election):
-    if isfile("elections/" + election + ".json") == False:
+    if not isfile("elections/" + election + ".json") or not isfile("election_hashes/" + election + ".hash"):
         return False
     sha256_hash = generate_election_hash(election)
     with open("election_hashes/" + election + ".hash", "r") as hash_file:
-        hash = hash_file.read()
-        if sha256_hash.hexdigest() != hash:
+        existing_hash = hash_file.read()
+        if sha256_hash != existing_hash:
             return False
         else:
             return True
 
+# if JSON and HASH exist, compare the two
+# else, fetch the data from DDP, generate a hash and continue
 
 def init():
     print("Running init function...")
     if not isdir("elections"):
         mkdir("elections")
+        print("Created elections folder...")
     if not isdir("election_hashes"):
         mkdir("election_hashes")
+        print("Created hash folder...")
     for election, code in election_codes.items():
-        if validate_election_file(election) == False:
+        if not validate_election_file(election):
+            print("Error with " + election + ".json, fetching details from Data.Parliament...")
             election_json = fetch_data_for_election(code)
-            for constituency in election_json.values():
-                constituency["candidates"].sort(key=extract_votes, reverse=True)
             with open("elections/" + election + ".json", "w") as file:
                 file.write(json.dumps(election_json))
                 print("Computed " + election + " election")
